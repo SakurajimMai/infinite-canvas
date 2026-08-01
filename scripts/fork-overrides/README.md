@@ -8,13 +8,19 @@ Used by `scripts/apply-fork-customizations.sh` after every upstream sync.
    - `web/src/components/layout/github-link.tsx`
    - `web/src/components/layout/version-release-modal.tsx`
    - `web/src/hooks/use-version-check.ts`
-2. **Restore** `user-status-actions.tsx` from this directory (no version badge / GitHub icon).
+2. **Restore** from this directory:
+   - `user-status-actions.tsx` — no version badge / GitHub / docs icon
+   - `canvas-top-bar.tsx` — no docs menu item
+   - `env.ts` — no `DOCS_URL` / `docs.canvas.best`
 
-## Editing the top bar
+## Editing these files
 
-Change **both**:
+Change **both** the live path under `web/` and the copy here:
 
-- `web/src/components/layout/user-status-actions.tsx`
-- `scripts/fork-overrides/user-status-actions.tsx`
+| Live path | Override |
+| --- | --- |
+| `web/src/components/layout/user-status-actions.tsx` | `user-status-actions.tsx` |
+| `web/src/components/canvas/canvas-top-bar.tsx` | `canvas-top-bar.tsx` |
+| `web/src/constant/env.ts` | `env.ts` |
 
 Otherwise the next sync will overwrite the web file with the override copy.
