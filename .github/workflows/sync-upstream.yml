@@ -1,0 +1,87 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # Daily 02:00 UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Default GITHUB_TOKEN push does not re-trigger other workflows;
+          # we explicitly dispatch Docker build below.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch and merge upstream
+        id: merge
+        env:
+          UPSTREAM_REPO: basketikun/infinite-canvas
+          UPSTREAM_BRANCH: main
+        run: |
+          set -euo pipefail
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream "${UPSTREAM_BRANCH}"
+
+          before="$(git rev-parse HEAD)"
+          if git merge-base --is-ancestor "upstream/${UPSTREAM_BRANCH}" HEAD; then
+            echo "already up to date with upstream/${UPSTREAM_BRANCH}"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            echo "merge conflicts detected; preferring upstream tree then re-applying fork customizations"
+            git checkout --theirs .
+            git add -A
+            GIT_EDITOR=true git commit --no-edit
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "before=${before}" >> "$GITHUB_OUTPUT"
+          echo "after=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Re-apply fork customizations
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          chmod +x scripts/apply-fork-customizations.sh
+          ./scripts/apply-fork-customizations.sh
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no customization delta after merge"
+          else
+            git commit -m "chore(fork): re-apply customizations after upstream sync"
+          fi
+
+      - name: Push
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Trigger Docker image build
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run docker-image.yml --ref "${{ github.ref_name }}"
+          echo "dispatched docker-image.yml on ${{ github.ref_name }}"
