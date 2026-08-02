@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  packages: write
 
 concurrency:
   group: sync-upstream
@@ -17,13 +17,15 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Default GITHUB_TOKEN push does not re-trigger other workflows;
-          # we explicitly dispatch Docker build below.
+          # Push with GITHUB_TOKEN does not re-trigger on.push workflows.
+          # Docker build is chained via workflow_call below instead of gh dispatch.
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure git
@@ -76,12 +78,16 @@ jobs:
       - name: Push
         if: steps.merge.outputs.changed == 'true'
         run: |
-          git push origin "HEAD:${{ github.ref_name }}"
-
-      - name: Trigger Docker image build
-        if: steps.merge.outputs.changed == 'true'
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${{ github.ref_name }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run docker-image.yml --ref "${{ github.ref_name }}"
-          echo "dispatched docker-image.yml on ${{ github.ref_name }}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build & push GHCR image in the same workflow run (avoids workflow_dispatch 403).
+  docker:
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    uses: ./.github/workflows/docker-image.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit

@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+  # Called by sync-upstream after a successful merge (GITHUB_TOKEN cannot dispatch workflows).
+  workflow_call:
 
 permissions:
   contents: read
